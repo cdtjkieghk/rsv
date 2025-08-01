@@ -1,97 +1,219 @@
-# rsv
-import os
-import numpy as np
-import rasterio
-from rasterio.windows import Window
-import geopandas as gpd
-from shapely.geometry import Point
-from sklearn.preprocessing import LabelEncoder
-from sklearn.ensemble import RandomForestClassifier
-import joblib
+# Улучшенная система классификации растровых данных
 
-# Пути
-raster_paths = [
-    r"C:\Users\123\Desktop\r_s_class\S1B_IW_SLC__1SDV_20210628T013430_20210628T013457_027550_0349E9_037C_deb_mat_Decomp_TC.tif",
-    r"C:\Users\123\Desktop\r_s_class\S1B_IW_SLC__1SDV_20210722T013431_20210722T013458_027900_035441_242D_deb_mat_Decomp_TC.tif",
-    r"C:\Users\123\Desktop\r_s_class\S1B_IW_SLC__1SDV_20210815T013433_20210815T013500_028250_035EC3_9790_deb_mat_Decomp_TC.tif"
-]
-shapefile_dir = r"C:\Users\123\Desktop\r_s_class\борисовка"
-output_dir = r"C:\Users\123\Desktop\r_s_class\output"
-os.makedirs(output_dir, exist_ok=True)
-chunk_size = 512
-model_path = os.path.join(output_dir, "rf_model.pkl")
+Система для обучения моделей машинного обучения на растровых данных и выполнения классификации больших растровых наборов данных с использованием чанковой обработки.
 
-# Чтение обучающих данных
-def read_training_data(shapefile_dir, raster_path):
-    crops = ['пшеница', 'ячмень', 'овес']
-    X, y = [], []
-    with rasterio.open(raster_path) as src:
-        transform = src.transform
-        for crop in crops:
-            shp_path = os.path.join(shapefile_dir, f"{crop}.shp")
-            gdf = gpd.read_file(shp_path).to_crs(src.crs)
-            for geom in gdf.geometry:
-                if geom.geom_type == 'Polygon':
-                    for point in geom.exterior.coords:
-                        px, py = ~transform * point
-                        px, py = int(px), int(py)
-                        if 0 <= px < src.width and 0 <= py < src.height:
-                            sample = []
-                            for path in raster_paths:
-                                with rasterio.open(path) as r:
-                                    val = r.read(window=Window(px, py, 1, 1)).flatten()
-                                    sample.extend(val)
-                            X.append(sample)
-                            y.append(crop)
-    return np.array(X), np.array(y)
+## Возможности
 
-# Обучение
-def train_model(X, y):
-    encoder = LabelEncoder()
-    y_encoded = encoder.fit_transform(y)
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
-    model.fit(X, y_encoded)
-    joblib.dump((model, encoder), model_path)
-    return model, encoder
+- 🏗️ **Объектно-ориентированная архитектура** - чистый, поддерживаемый код
+- 🛡️ **Надежная обработка ошибок** - валидация входных данных и graceful degradation
+- ⚡ **Оптимизированная производительность** - многопоточность и эффективная обработка памяти
+- 📊 **Улучшенная выборка данных** - интеллектуальная выборка точек из полигонов
+- 📈 **Прогресс-бары и логирование** - отслеживание выполнения операций
+- 🔧 **Гибкая конфигурация** - поддержка JSON конфигурационных файлов
+- 📝 **Подробная оценка модели** - метрики точности и отчеты классификации
 
-# Генератор чанков
-def generate_chunks(width, height, size):
-    for y in range(0, height, size):
-        for x in range(0, width, size):
-            yield Window(x, y, min(size, width - x), min(size, height - y))
+## Установка
 
-# Предсказание по чанкам
-def predict_in_chunks(model, encoder, raster_paths, chunk_size, output_path):
-    with rasterio.open(raster_paths[0]) as ref:
-        meta = ref.meta.copy()
-        width, height = ref.width, ref.height
-        meta.update(count=1, dtype='uint8')
+1. Клонируйте репозиторий:
+```bash
+git clone <repository-url>
+cd rsv
+```
 
-    with rasterio.open(output_path, 'w', **meta) as dst:
-        for window in generate_chunks(width, height, chunk_size):
-            chunk_data = []
-            for path in raster_paths:
-                with rasterio.open(path) as src:
-                    data = src.read(window=window)
-                    chunk_data.append(data)
-            stack = np.concatenate(chunk_data, axis=0)  # (bands, h, w)
-            h, w = stack.shape[1:]
-            reshaped = stack.reshape(stack.shape[0], -1).T  # (pixels, bands)
-            pred = model.predict(reshaped)
-            pred_2d = pred.reshape(h, w).astype('uint8')
-            dst.write(pred_2d, window=window, indexes=1)
+2. Установите зависимости:
+```bash
+pip install -r requirements.txt
+```
 
-# Главный блок
-if __name__ == "__main__":
-    print("[*] Чтение обучающих данных...")
-    X, y = read_training_data(shapefile_dir, raster_paths[0])
-    print(f"[*] Обучено на {len(X)} пикселях.")
+## Быстрый старт
 
-    print("[*] Обучение модели...")
-    model, encoder = train_model(X, y)
+### Базовое использование
 
-    print("[*] Классификация по чанкам...")
-    output_path = os.path.join(output_dir, "classified.tif")
-    predict_in_chunks(model, encoder, raster_paths, chunk_size, output_path)
+```python
+from raster_classifier import RasterClassifier, Config
 
-    print(f"[+] Сохранено: {output_path}")
+# Создайте конфигурацию
+config = Config(
+    raster_paths=[
+        "path/to/raster1.tif",
+        "path/to/raster2.tif",
+        "path/to/raster3.tif"
+    ],
+    shapefile_dir="path/to/shapefiles",
+    output_dir="output",
+    crops=['пшеница', 'ячмень', 'овес']
+)
+
+# Инициализируйте классификатор
+classifier = RasterClassifier(config)
+
+# Запустите полный пайплайн
+output_path = classifier.run_full_pipeline()
+print(f"Классификация завершена: {output_path}")
+```
+
+### Использование конфигурационного файла
+
+1. Создайте `config.json`:
+```json
+{
+    "raster_paths": [
+        "data/raster1.tif",
+        "data/raster2.tif"
+    ],
+    "shapefile_dir": "data/shapefiles",
+    "output_dir": "output",
+    "chunk_size": 512,
+    "crops": ["пшеница", "ячмень", "овес"],
+    "n_estimators": 100
+}
+```
+
+2. Используйте конфигурацию:
+```python
+from raster_classifier import load_config_from_file, RasterClassifier
+
+config = load_config_from_file("config.json")
+classifier = RasterClassifier(config)
+output_path = classifier.run_full_pipeline()
+```
+
+## Структура проекта
+
+```
+rsv/
+├── raster_classifier.py    # Основной модуль классификации
+├── config.json            # Шаблон конфигурации
+├── example_usage.py       # Примеры использования
+├── requirements.txt       # Зависимости Python
+└── README.md             # Документация
+```
+
+## Конфигурация
+
+### Параметры Config
+
+| Параметр | Тип | Описание | По умолчанию |
+|----------|-----|----------|--------------|
+| `raster_paths` | List[str] | Пути к растровым файлам | Обязательный |
+| `shapefile_dir` | str | Директория с шейп-файлами | Обязательный |
+| `output_dir` | str | Выходная директория | Обязательный |
+| `chunk_size` | int | Размер чанка для обработки | 512 |
+| `crops` | List[str] | Список классов культур | ['пшеница', 'ячмень', 'овес'] |
+| `n_estimators` | int | Количество деревьев в Random Forest | 100 |
+| `random_state` | int | Seed для воспроизводимости | 42 |
+| `test_size` | float | Доля тестовых данных | 0.2 |
+
+## Пошаговое использование
+
+```python
+from raster_classifier import RasterClassifier, Config
+
+config = Config(
+    raster_paths=["data/raster1.tif"],
+    shapefile_dir="data/shapefiles", 
+    output_dir="output"
+)
+
+classifier = RasterClassifier(config)
+
+# Шаг 1: Валидация входных данных
+if not classifier._validate_inputs():
+    print("Ошибка валидации входных данных")
+    exit(1)
+
+# Шаг 2: Чтение обучающих данных
+X, y = classifier.read_training_data(config.raster_paths[0])
+print(f"Загружено обучающих данных: {X.shape}")
+
+# Шаг 3: Обучение модели
+model, encoder = classifier.train_model(X, y)
+print("Модель обучена")
+
+# Шаг 4: Классификация
+output_path = "output/classified.tif"
+classifier.predict_in_chunks(output_path)
+print(f"Классификация завершена: {output_path}")
+```
+
+## Работа с существующими моделями
+
+```python
+# Загрузка существующей модели
+config = Config(
+    raster_paths=["data/raster1.tif"],
+    shapefile_dir="data/shapefiles",
+    output_dir="output",
+    model_path="output/rf_model.pkl"
+)
+
+classifier = RasterClassifier(config)
+model, encoder = classifier.load_model()
+
+# Использование для классификации
+classifier.predict_in_chunks("output/new_classification.tif")
+```
+
+## Улучшения по сравнению с оригинальным кодом
+
+### 🏗️ Архитектура
+- **Класс RasterClassifier**: Инкапсулирует всю функциональность
+- **Dataclass Config**: Типизированная конфигурация
+- **Разделение ответственности**: Каждый метод имеет четкую задачу
+
+### 🛡️ Надежность
+- **Валидация входных данных**: Проверка существования файлов
+- **Обработка ошибок**: Try-catch блоки с информативными сообщениями
+- **Обработка NoData**: Корректная работа с пропущенными значениями
+
+### ⚡ Производительность
+- **Многопоточность**: `n_jobs=-1` в Random Forest
+- **Эффективная выборка**: Улучшенный алгоритм выборки точек из полигонов
+- **Оптимизация памяти**: Обработка по чанкам с контролем памяти
+
+### 📊 Мониторинг
+- **Логирование**: Детальные логи в файл и консоль
+- **Прогресс-бары**: tqdm для отслеживания прогресса
+- **Метрики модели**: Accuracy, classification report
+
+### 🔧 Удобство использования
+- **Конфигурационные файлы**: JSON конфигурация
+- **Примеры использования**: Подробные примеры в `example_usage.py`
+- **Документация**: Полная типизация и docstrings
+
+## Требования к данным
+
+### Растровые файлы
+- Формат: GeoTIFF (.tif)
+- Проекция: Любая поддерживаемая GDAL
+- Каналы: Любое количество
+
+### Шейп-файлы
+- Формат: ESRI Shapefile (.shp)
+- Геометрия: Полигоны
+- Именование: `{crop_name}.shp` (например, `пшеница.shp`)
+
+## Логирование
+
+Система создает логи в двух местах:
+- **Консоль**: Основные сообщения о прогрессе
+- **Файл**: Детальные логи в `{output_dir}/classifier.log`
+
+## Производительность
+
+Система оптимизирована для работы с большими растрами:
+- **Чанковая обработка**: Обработка по частям для экономии памяти
+- **Параллельные вычисления**: Использование всех доступных ядер CPU
+- **LZW сжатие**: Сжатие выходных файлов
+
+## Примеры
+
+Запустите `example_usage.py` для просмотра различных способов использования:
+
+```bash
+python example_usage.py
+```
+
+## Лицензия
+
+MIT License

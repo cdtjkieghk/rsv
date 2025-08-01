@@ -1,0 +1,14 @@
+{
+    "raster_paths": [
+        "path/to/raster1.tif",
+        "path/to/raster2.tif",
+        "path/to/raster3.tif"
+    ],
+    "shapefile_dir": "path/to/shapefiles",
+    "output_dir": "path/to/output",
+    "chunk_size": 512,
+    "crops": ["пшеница", "ячмень", "овес"],
+    "n_estimators": 100,
+    "random_state": 42,
+    "test_size": 0.2
+}
